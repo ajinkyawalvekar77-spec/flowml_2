@@ -1,0 +1,3 @@
+/* Reset — all layout is handled by globals.css and Tailwind */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; }
