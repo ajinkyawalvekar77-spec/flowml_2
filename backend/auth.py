@@ -1,13 +1,11 @@
+```python
 """
 Authentication dependency for FastAPI.
 
-Production:  Verifies a Firebase ID token from the Authorization header.
-             Requires firebase-admin SDK initialised with a service account.
-Admin API:   Uses an expiring signed session issued after configured username/password
-             authentication.
-Development: Set DEV_AUTH=1 in the environment; the token value is used
-             directly as the uid (use any non-empty string as the Bearer
-             token in curl/tests). NEVER enable DEV_AUTH in production.
+Production: Verifies Firebase ID tokens.
+Admin API: Uses expiring signed admin sessions.
+Development: DEV_AUTH=1 bypasses Firebase token verification.
+Never enable DEV_AUTH in production.
 """
 
 import os
@@ -16,8 +14,8 @@ import base64
 import hashlib
 import hmac
 import time
-from functools import lru_cache
 from typing import Optional, Set
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -51,6 +49,7 @@ def set_user_active_status(uid: str, is_active: bool):
         users.discard(uid)
     else:
         users.add(uid)
+
     path = _get_deactivated_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -58,24 +57,38 @@ def set_user_active_status(uid: str, is_active: bool):
 
 
 def _firebase_app():
-    """Lazy-init Firebase Admin SDK (only when not in dev mode)."""
+    """Initialize Firebase Admin SDK once."""
     try:
-        import firebase_admin  # type: ignore
-        from firebase_admin import credentials  # type: ignore
+        import firebase_admin
+        from firebase_admin import credentials
 
         if not firebase_admin._apps:
-            cred_path = os.getenv("FIREBASE_CREDENTIALS", "firebase-credentials.json")
-            if os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
+            service_account_json = os.getenv(
+                "FIREBASE_SERVICE_ACCOUNT_JSON"
+            )
+
+            if service_account_json:
+                service_account_info = json.loads(service_account_json)
+                cred = credentials.Certificate(service_account_info)
             else:
-                cred = credentials.ApplicationDefault()
+                cred_path = os.getenv(
+                    "FIREBASE_CREDENTIALS",
+                    "firebase-credentials.json",
+                )
+
+                if os.path.exists(cred_path):
+                    cred = credentials.Certificate(cred_path)
+                else:
+                    cred = credentials.ApplicationDefault()
+
             firebase_admin.initialize_app(cred)
+
         return firebase_admin.get_app()
-    except ImportError:
+
+    except ImportError as exc:
         raise RuntimeError(
-            "firebase-admin is not installed. "
-            "Install it or set DEV_AUTH=1 for local development."
-        )
+            "firebase-admin is not installed. Check backend requirements."
+        ) from exc
 
 
 def _admin_auth_secret() -> Optional[bytes]:
@@ -86,7 +99,7 @@ def _admin_auth_secret() -> Optional[bytes]:
 
 
 def get_configured_admin_credentials() -> tuple[Set[str], Optional[str]]:
-    """Returns admin usernames and the shared password from server configuration."""
+    """Return configured admin usernames and password."""
     usernames = {
         username.strip()
         for username in os.getenv("ADMIN_USERNAMES", "").split(",")
@@ -97,10 +110,12 @@ def get_configured_admin_credentials() -> tuple[Set[str], Optional[str]]:
 
 
 def create_admin_session_token(username: str) -> str:
-    """Creates an expiring, signed token for the admin API."""
+    """Create an expiring, signed admin token."""
     secret = _admin_auth_secret()
     if not secret:
-        raise RuntimeError("ADMIN_AUTH_SECRET must contain at least 32 characters.")
+        raise RuntimeError(
+            "ADMIN_AUTH_SECRET must contain at least 32 characters."
+        )
 
     now = int(time.time())
     payload = {
@@ -110,16 +125,27 @@ def create_admin_session_token(username: str) -> str:
         "role": "admin",
         "sub": username,
     }
+
     encoded_payload = base64.urlsafe_b64encode(
         json.dumps(payload, separators=(",", ":")).encode("utf-8")
     ).rstrip(b"=")
-    signature = hmac.new(secret, encoded_payload, hashlib.sha256).digest()
-    encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=")
-    return f"{encoded_payload.decode('ascii')}.{encoded_signature.decode('ascii')}"
+
+    signature = hmac.new(
+        secret, encoded_payload, hashlib.sha256
+    ).digest()
+
+    encoded_signature = base64.urlsafe_b64encode(
+        signature
+    ).rstrip(b"=")
+
+    return (
+        f"{encoded_payload.decode('ascii')}."
+        f"{encoded_signature.decode('ascii')}"
+    )
 
 
 def verify_admin_session_token(token: str) -> Optional[str]:
-    """Returns the username for a valid admin session token, otherwise None."""
+    """Return the username for a valid admin token, otherwise None."""
     secret = _admin_auth_secret()
     if not secret:
         return None
@@ -127,10 +153,15 @@ def verify_admin_session_token(token: str) -> Optional[str]:
     try:
         encoded_payload, encoded_signature = token.split(".", 1)
         payload_bytes = encoded_payload.encode("ascii")
+
         signature = base64.urlsafe_b64decode(
             encoded_signature + "=" * (-len(encoded_signature) % 4)
         )
-        expected_signature = hmac.new(secret, payload_bytes, hashlib.sha256).digest()
+
+        expected_signature = hmac.new(
+            secret, payload_bytes, hashlib.sha256
+        ).digest()
+
         if not hmac.compare_digest(signature, expected_signature):
             return None
 
@@ -139,10 +170,13 @@ def verify_admin_session_token(token: str) -> Optional[str]:
                 encoded_payload + "=" * (-len(encoded_payload) % 4)
             )
         )
+
         if not isinstance(payload, dict):
             return None
+
         expires_at = payload.get("exp")
         username = payload.get("sub")
+
         if (
             payload.get("iss") != "flowml-admin"
             or payload.get("role") != "admin"
@@ -152,10 +186,13 @@ def verify_admin_session_token(token: str) -> Optional[str]:
             or not isinstance(username, str)
         ):
             return None
+
         configured_usernames, _ = get_configured_admin_credentials()
         if username not in configured_usernames:
             return None
+
         return username
+
     except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
         return None
 
@@ -163,14 +200,13 @@ def verify_admin_session_token(token: str) -> Optional[str]:
 async def get_current_user(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> str:
-    """
-    FastAPI dependency that returns the authenticated user's uid.
-    """
+    """Return the authenticated user's UID."""
     token = creds.credentials if creds else None
 
     if DEV_AUTH:
         if not token:
             return "desktop_offline_user"
+
         uid = token
         if uid in get_deactivated_users():
             raise HTTPException(
@@ -179,46 +215,50 @@ async def get_current_user(
             )
         return uid
 
-    # --- Production path ---
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided.",
         )
+
     try:
-        from firebase_admin import auth as fb_auth  # type: ignore
+        from firebase_admin import auth as fb_auth
 
         _firebase_app()
         decoded = fb_auth.verify_id_token(token)
         uid = decoded["uid"]
+
         if uid in get_deactivated_users():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is deactivated. Contact an administrator.",
             )
+
         return uid
+
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
+        # Do not expose credentials or internal exception details to clients.
+        print(f"Firebase authentication failed: {type(exc).__name__}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired authentication token.",
-        )
+        ) from exc
 
 
 async def get_current_admin(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> str:
-    """
-    FastAPI dependency requiring admin privileges.
-    """
+    """Require admin privileges."""
     if not creds or not creds.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication token required.",
         )
-    token = creds.credentials
-    admin_uid = verify_admin_session_token(token)
+
+    admin_uid = verify_admin_session_token(creds.credentials)
+
     if admin_uid:
         if admin_uid in get_deactivated_users():
             raise HTTPException(
@@ -231,3 +271,4 @@ async def get_current_admin(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Administrator access required.",
     )
+```
