@@ -1,5 +1,4 @@
-```python
-"""
+
 Authentication dependency for FastAPI.
 
 Production: Verifies Firebase ID tokens.
