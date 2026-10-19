@@ -1,0 +1,55 @@
+# Environments & dependencies
+venv/
+**/venv/
+ENV/
+env/
+node_modules/
+**/node_modules/
+
+# Python cache & build
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+**/.pytest_cache/
+
+# Environment configs
+.env
+*.env
+
+# Build outputs
+dist/
+**/dist/
+dist-ssr/
+**/dist-ssr/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# AI Agent & IDE configs / GSD framework
+.agent/
+.agents/
+.gemini/
+.gsd/
+adapters/
+scripts/
+GSD-STYLE.md
+PROJECT_RULES.md
+VERSION
+.vscode/
+.idea/
+.DS_Store
+# Storage & Model Artifacts
+storage/
+models/
+*.joblib
+*.pkl
+backend/audit_events.jsonl
+backend/system_limits.json
+backend/simulated_user_*
+backend/test_user_*
+backend/crash_recovery_user
+backend/iris.csv
