@@ -1,14 +1,4 @@
-"""
-Authentication dependency for FastAPI.
 
-Production:  Verifies a Firebase ID token from the Authorization header.
-             Requires firebase-admin SDK initialised with a service account.
-Admin API:   Uses an expiring signed session issued after configured username/password
-             authentication.
-Development: Set DEV_AUTH=1 in the environment; the token value is used
-             directly as the uid (use any non-empty string as the Bearer
-             token in curl/tests). NEVER enable DEV_AUTH in production.
-"""
 
 import os
 import json
