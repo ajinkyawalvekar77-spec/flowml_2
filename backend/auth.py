@@ -57,25 +57,39 @@ def set_user_active_status(uid: str, is_active: bool):
         json.dump(list(users), f)
 
 
+
 def _firebase_app():
-    """Lazy-init Firebase Admin SDK (only when not in dev mode)."""
+  
     try:
-        import firebase_admin  # type: ignore
-        from firebase_admin import credentials  # type: ignore
+        import firebase_admin
+        from firebase_admin import credentials
 
         if not firebase_admin._apps:
-            cred_path = os.getenv("FIREBASE_CREDENTIALS", "firebase-credentials.json")
-            if os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
+            service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+
+            if service_account_json:
+                service_account_info = json.loads(service_account_json)
+                cred = credentials.Certificate(service_account_info)
             else:
-                cred = credentials.ApplicationDefault()
+                cred_path = os.getenv(
+                    "FIREBASE_CREDENTIALS",
+                    "firebase-credentials.json",
+                )
+
+                if os.path.exists(cred_path):
+                    cred = credentials.Certificate(cred_path)
+                else:
+                    cred = credentials.ApplicationDefault()
+
             firebase_admin.initialize_app(cred)
+
         return firebase_admin.get_app()
-    except ImportError:
+
+    except ImportError as exc:
         raise RuntimeError(
             "firebase-admin is not installed. "
             "Install it or set DEV_AUTH=1 for local development."
-        )
+        ) from exc
 
 
 def _admin_auth_secret() -> Optional[bytes]:
