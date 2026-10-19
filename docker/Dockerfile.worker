@@ -1,0 +1,27 @@
+# FlowML Isolated Execution Worker Container
+# Security: non-root user, no network, read-only root fs, bounded resources
+FROM python:3.10-slim
+
+# Prevent python from buffering stdout/stderr and writing bytecode
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Create non-root user and group
+RUN groupadd -g 1000 flowml && \
+    useradd -u 1000 -g flowml -m -s /bin/bash flowml
+
+# Install approved data science libraries only
+RUN pip install --no-cache-dir \
+    numpy==1.26.4 \
+    pandas==2.2.2 \
+    scikit-learn==1.4.2 \
+    matplotlib==3.8.4
+
+# Create app directory with strict permissions
+WORKDIR /app
+RUN chown -R flowml:flowml /app
+
+USER flowml
+
+# Entry point accepts script path as argument
+CMD ["python", "/app/script.py"]
