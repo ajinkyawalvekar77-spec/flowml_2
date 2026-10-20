@@ -342,15 +342,23 @@ async def upload_dataset(
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise
-    except Exception as exc:
-        if tmp_path and os.path.exists(tmp_path):
+   except Exception as exc:
+    if tmp_path and os.path.exists(tmp_path):
+        try:
             os.unlink(tmp_path)
-        log_event(f"[{uid}] Upload error: {exc}", level="ERROR")
-        raise_http_exception(
-            500,
-            "File processing error",
-            "The dataset could not be stored. Please try again.",
-        )
+        except OSError:
+            pass
+
+    log_event(
+        f"[{uid}] Upload error: {type(exc).__name__}: {exc}",
+        level="ERROR",
+    )
+
+    raise_http_exception(
+        500,
+        "File processing error",
+        f"Temporary upload processing failed: {type(exc).__name__}: {exc}",
+    )
 
 
 @router.post("/upload-url")
