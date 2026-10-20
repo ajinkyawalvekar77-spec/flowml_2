@@ -1,18 +1,4 @@
-"""
-Storage abstraction layer — interface + local-disk implementation.
 
-The interface (StoreBackend) defines all I/O operations used by every route.
-The local implementation keeps files under:
-    storage/{uid}/datasets/{dataset_id}/
-    storage/{uid}/models/{model_id}/
-    storage/{uid}/runs/{run_id}/
-
-Swapping to Firebase Storage + Firestore later is a one-file change:
-just replace LocalDiskStore with a FirebaseStore that implements StoreBackend.
-
-Security guarantee: every path is resolved through _safe_path() which raises
-403 if the resolved path would escape the per-user root (path-traversal guard).
-"""
 
 from __future__ import annotations
 
