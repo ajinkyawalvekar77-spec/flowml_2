@@ -24,13 +24,22 @@ api.interceptors.request.use(
       return config;
     }
 
-    try {
-      const token = await getCurrentIdToken();
-      config.headers.Authorization = `Bearer ${token || 'desktop_offline_user'}`;
-    } catch {
-      config.headers.Authorization = 'Bearer desktop_offline_user';
-    }
-    return config;
+  
+try {
+  const token = await getCurrentIdToken();
+
+  if (!token) {
+    return Promise.reject(
+      new Error('Please sign in to continue.')
+    );
+  }
+
+  config.headers.Authorization = `Bearer ${token}`;
+  return config;
+} catch (error) {
+  return Promise.reject(error);
+}
+
   },
   (error) => Promise.reject(error)
 );
