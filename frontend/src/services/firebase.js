@@ -48,29 +48,13 @@ if (!forceDevAuth && isConfigured) {
 const DEV_STORAGE_KEY = 'flowml_dev_auth_user';
 const DEV_USERS_KEY = 'flowml_registered_users';
 
-const DEFAULT_OFFLINE_DEV_USER = {
-  uid: 'desktop_offline_user',
-  email: 'desktop.user@flowml.local',
-  displayName: 'Desktop User',
-  emailVerified: true,
-  photoURL: null,
-  isDev: true,
-  createdAt: new Date().toISOString(),
-};
-
 function getStoredDevUser() {
   try {
     const raw = localStorage.getItem(DEV_STORAGE_KEY);
-    if (!raw) {
-      if (forceDevAuth) {
-        localStorage.setItem(DEV_STORAGE_KEY, JSON.stringify(DEFAULT_OFFLINE_DEV_USER));
-        return DEFAULT_OFFLINE_DEV_USER;
-      }
-      return null;
-    }
+    if (!raw) return null;
     return JSON.parse(raw);
   } catch {
-    return forceDevAuth ? DEFAULT_OFFLINE_DEV_USER : null;
+    return null;
   }
 }
 
@@ -202,88 +186,36 @@ export async function registerWithEmail(email, password, displayName = '') {
   };
 
   notifyDevListeners(sessionUser);
-
-  // Send branded verification email from flowmlstudio@gmail.com
-  try {
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-    fetch(`${apiBase}/api/auth/send-verification`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: newUser.email, user_id: newUser.uid, app_url: window.location.origin }),
-    }).catch((err) => console.warn('Email verification dispatch:', err));
-  } catch (err) {
-    console.warn('Email dispatch failed:', err);
-  }
-
   return sessionUser;
 }
 
 /**
- * Reset password — dispatches reset instructions from flowmlstudio@gmail.com
+ * Reset password
  */
 export async function sendPasswordReset(email) {
-  try {
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-    await fetch(`${apiBase}/api/auth/send-password-reset`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, app_url: window.location.origin }),
-    });
-  } catch (err) {
-    console.warn('Backend password reset email warning:', err);
-  }
-
   if (!forceDevAuth) {
     return sendPasswordResetEmail(requireFirebaseAuth(), email);
   }
-  return { success: true, email, sender: 'flowmlstudio@gmail.com' };
+  // Dev Mock — simulates sending email
+  await new Promise((r) => setTimeout(r, 600));
+  return { success: true, email };
 }
 
 /**
- * Resend email verification — dispatches link from flowmlstudio@gmail.com
+ * Resend email verification
  */
-export async function sendVerification(targetEmail = null) {
-  const email = targetEmail || currentDevUser?.email || realAuth?.currentUser?.email;
-  const uid = currentDevUser?.uid || realAuth?.currentUser?.uid || 'user';
-  let emailResult = null;
-
-  if (email) {
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-      const resp = await fetch(`${apiBase}/api/auth/send-verification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, user_id: uid, app_url: window.location.origin }),
-      });
-      emailResult = await resp.json();
-    } catch (err) {
-      console.warn('Backend verification dispatch warning:', err);
-    }
-  }
-
+export async function sendVerification() {
   if (!forceDevAuth) {
     const auth = requireFirebaseAuth();
     if (!auth.currentUser) throw new Error('Sign in before requesting email verification.');
     return sendEmailVerification(auth.currentUser);
   }
-
-  return { success: true, sender: 'flowmlstudio@gmail.com', ...emailResult };
-}
-
-/**
- * Mark user email as verified upon token confirmation
- */
-export function markUserEmailVerified(email = null) {
-  if (currentDevUser && (!email || currentDevUser.email.toLowerCase() === email.toLowerCase())) {
+  // Dev Mock — marks verified or sends mock email
+  if (currentDevUser) {
     currentDevUser.emailVerified = true;
-    const users = getStoredUsers();
-    const idx = users.findIndex((u) => u.email.toLowerCase() === currentDevUser.email.toLowerCase());
-    if (idx !== -1) {
-      users[idx].emailVerified = true;
-      saveStoredUsers(users);
-    }
     notifyDevListeners({ ...currentDevUser });
   }
+  return { success: true };
 }
 
 /**
@@ -303,7 +235,7 @@ export async function getCurrentIdToken() {
   if (!forceDevAuth) {
     return realAuth?.currentUser ? realAuth.currentUser.getIdToken() : null;
   }
-  return currentDevUser?.uid || 'desktop_offline_user';
+  return currentDevUser?.uid ?? null;
 }
 
 /**
