@@ -25,7 +25,9 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-_BASE_STORAGE_ROOT = os.getenv("STORAGE_ROOT", "storage")
+
+_BASE_STORAGE_ROOT = os.getenv("STORAGE_ROOT", "/tmp/flowml_storage")
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
