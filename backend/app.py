@@ -16,6 +16,7 @@ from utils.logger import stream_logs, log_event
 
 app = FastAPI(title="FlowML Backend")
 
+
 # Setup CORS
 app.add_middleware(
     CORSMiddleware,
@@ -23,7 +24,7 @@ app.add_middleware(
         origin.strip()
         for origin in os.getenv(
             "CORS_ORIGINS",
-            "http://localhost:5173,http://127.0.0.1:5173","https://flowml-2.vercel.app",
+            "http://localhost:5173,http://127.0.0.1:5173,https://flowml-2.vercel.app",
         ).split(",")
         if origin.strip()
     ],
@@ -31,6 +32,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Register routers
 app.include_router(upload.router,     prefix="/api", tags=["Upload"])
