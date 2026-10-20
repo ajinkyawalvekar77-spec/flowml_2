@@ -338,16 +338,21 @@ async def upload_dataset(
         log_event(f"[{uid}] Upload OK → dataset_id={dataset_id}")
         return {**metadata, "dataset_id": dataset_id, "file_name": original_name}
 
-    except HTTPException:
+        except HTTPException:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise
-   except Exception as exc:
-    if tmp_path and os.path.exists(tmp_path):
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    except Exception as exc:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+        log_event(
+            f"[{uid}] Upload error: {type(exc).__name__}: {exc}",
+            level="ERROR",
+        )
 
     log_event(
         f"[{uid}] Upload error: {type(exc).__name__}: {exc}",
