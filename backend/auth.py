@@ -188,25 +188,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided.",
         )
-    try:
-        from firebase_admin import auth as fb_auth  # type: ignore
-
-        _firebase_app()
-        decoded = fb_auth.verify_id_token(token)
-        uid = decoded["uid"]
-        if uid in get_deactivated_users():
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account is deactivated. Contact an administrator.",
-            )
-        return uid
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired authentication token.",
-        )
+   
 
 
 async def get_current_admin(
@@ -224,7 +206,35 @@ async def get_current_admin(
     admin_uid = verify_admin_session_token(token)
     if admin_uid:
         if admin_uid in get_deactivated_users():
+                try:
+        from firebase_admin import auth as fb_auth
+
+        app = _firebase_app()
+        decoded = fb_auth.verify_id_token(token, app=app)
+        uid = decoded["uid"]
+
+        if uid in get_deactivated_users():
             raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is deactivated. Contact an administrator.",
+            )
+
+        return uid
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        logger.warning(
+            "Firebase authentication failed: %s",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your session has expired or authentication failed. Please sign in again.",
+        )
+
+raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is deactivated.",
             )
