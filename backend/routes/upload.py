@@ -265,25 +265,33 @@ def download_dataset_from_url(url: str, custom_name: Optional[str] = None) -> tu
                 pass
 
 
+
 @router.post("/upload")
 async def upload_dataset(
     file: UploadFile = File(...),
     uid: str = Depends(get_current_user),
     store: StoreBackend = Depends(get_store),
 ):
-    """
-    Upload a CSV or Excel file.
-    Returns dataset_id + schema metadata.
-    """
+    """Upload a CSV or Excel file and save its metadata."""
+
     if not file.filename or not allowed_file(file.filename):
         log_event(f"[{uid}] Rejected upload: {file.filename}", level="ERROR")
-        raise_http_exception(400, "Invalid file format", "Only CSV (.csv) and Excel (.xls/.xlsx) files are allowed.")
+        raise_http_exception(
+            400,
+            "Invalid file format",
+            "Only CSV (.csv) and Excel (.xls/.xlsx) files are allowed.",
+        )
 
     max_size_bytes = int(os.getenv("MAX_UPLOAD_SIZE_MB", "500")) * 1024 * 1024
     if max_size_bytes <= 0:
-        raise_http_exception(500, "Upload unavailable", "The configured upload limit must be greater than zero.")
+        raise_http_exception(
+            500,
+            "Upload unavailable",
+            "The configured upload limit must be greater than zero.",
+        )
 
     client_name = file.filename.replace("\\", "/").rsplit("/", 1)[-1]
+
     if "." in client_name:
         ext = client_name.rsplit(".", 1)[-1].lower()
         safe_base = client_name.rsplit(".", 1)[0].replace(" ", "_") or "dataset"
@@ -294,22 +302,114 @@ async def upload_dataset(
         original_name = f"{safe_base}.csv"
 
     tmp_path = None
+
     try:
         size_bytes = 0
-        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
+
+        with tempfile.NamedTemporaryFile(
+            suffix=f".{ext}", delete=False
+        ) as tmp:
             tmp_path = tmp.name
+
             while chunk := await file.read(1024 * 1024):
                 size_bytes += len(chunk)
+
                 if size_bytes > max_size_bytes:
                     raise_http_exception(
                         413,
                         "File Too Large",
-                        f"File exceeds maximum allowed size of {max_size_bytes // (1024 * 1024)}MB.",
+                        f"File exceeds maximum allowed size of "
+                        f"{max_size_bytes // (1024 * 1024)}MB.",
                     )
+
                 tmp.write(chunk)
 
         if size_bytes == 0:
-            raise_http_exception(400, "Empty file", "Upload a non-empty CSV or Excel dataset.")
+            raise_http_exception(
+                400,
+                "Empty file",
+                "Upload a non-empty CSV or Excel dataset.",
+            )
+
+        try:
+            df = load_dataset(tmp_path)
+        except Exception as exc:
+            log_event(
+                f"[{uid}] Invalid dataset content: "
+                f"{type(exc).__name__}: {exc}",
+                level="ERROR",
+            )
+            raise_http_exception(
+                400,
+                "Invalid dataset",
+                "The file could not be read as a valid CSV or Excel dataset.",
+            )
+
+        metadata = get_dataset_metadata(df, original_name)
+        dataset_id = uuid.uuid4().hex
+
+        log_event(
+            f"[{uid}] Saving dataset: id={dataset_id}, "
+            f"path={tmp_path}, size={size_bytes}",
+        )
+
+        store.save_dataset(uid, dataset_id, tmp_path)
+
+        os.unlink(tmp_path)
+        tmp_path = None
+
+        store.update_dataset_meta(uid, dataset_id, {
+            "dataset_id": dataset_id,
+            "original_name": original_name,
+            "rows": metadata["rows"],
+            "columns": metadata["columns"],
+            "column_names": metadata["column_names"],
+        })
+
+        log_event(f"[{uid}] Upload OK -> dataset_id={dataset_id}")
+
+        return {
+            **metadata,
+            "dataset_id": dataset_id,
+            "file_name": original_name,
+        }
+
+    except HTTPException:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError as cleanup_exc:
+                log_event(
+                    f"[{uid}] Temp cleanup error: {cleanup_exc}",
+                    level="ERROR",
+                )
+        raise
+
+    except Exception as exc:
+        log_event(
+            f"[{uid}] Upload error: {type(exc).__name__}: {exc}",
+            level="ERROR",
+        )
+
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError as cleanup_exc:
+                log_event(
+                    f"[{uid}] Temp cleanup error: {cleanup_exc}",
+                    level="ERROR",
+                )
+
+        raise_http_exception(
+            500,
+            "File processing error",
+            f"Temporary upload processing failed: "
+            f"{type(exc).__name__}: {exc}",
+        )
+
+    finally:
+        await file.close()
+
 
         try:
             df = load_dataset(tmp_path)
