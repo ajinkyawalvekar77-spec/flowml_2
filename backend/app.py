@@ -23,7 +23,7 @@ app.add_middleware(
         origin.strip()
         for origin in os.getenv(
             "CORS_ORIGINS",
-            "https://flowml-host.vercel.app,http://localhost:5173,http://127.0.0.1:5173",
+            "https://flowml-2.vercel.app,http://localhost:5173,http://127.0.0.1:5173",
         ).split(",")
         if origin.strip()
     ],
