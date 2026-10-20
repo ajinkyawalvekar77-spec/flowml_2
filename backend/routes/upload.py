@@ -438,32 +438,42 @@ async def upload_dataset(
         log_event(f"[{uid}] Upload OK → dataset_id={dataset_id}")
         return {**metadata, "dataset_id": dataset_id, "file_name": original_name}
 
-        except HTTPException:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        raise
-    except Exception as exc:
+
+            except HTTPException:
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
-            except OSError:
-                pass
+            except OSError as cleanup_exc:
+                log_event(
+                    f"[{uid}] Temp cleanup error: {cleanup_exc}",
+                    level="ERROR",
+                )
+        raise
 
+    except Exception as exc:
         log_event(
             f"[{uid}] Upload error: {type(exc).__name__}: {exc}",
             level="ERROR",
         )
 
-    log_event(
-        f"[{uid}] Upload error: {type(exc).__name__}: {exc}",
-        level="ERROR",
-    )
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError as cleanup_exc:
+                log_event(
+                    f"[{uid}] Temp cleanup error: {cleanup_exc}",
+                    level="ERROR",
+                )
 
-    raise_http_exception(
-        500,
-        "File processing error",
-        f"Temporary upload processing failed: {type(exc).__name__}: {exc}",
-    )
+        raise_http_exception(
+            500,
+            "File processing error",
+            f"Temporary upload processing failed: "
+            f"{type(exc).__name__}: {exc}",
+        )
+
+    finally:
+        await file.close()
 
 
 @router.post("/upload-url")
@@ -473,7 +483,8 @@ async def upload_dataset_from_url_route(
     uid: str = Depends(get_current_user),
     store: StoreBackend = Depends(get_store),
 ):
-    """
+        
+        """
     Download and store a dataset from a GitHub link, Kaggle dataset link, Google Drive, or web URL.
     Returns dataset_id + schema metadata.
     """
